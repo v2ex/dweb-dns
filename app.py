@@ -87,6 +87,20 @@ def dotbit_resolve(name):
     return None
 
 
+def ens_resolve(name):
+    resolver = "https://api.planetable.xyz/ens/resolve/"
+    r = requests.get(resolver + name)
+    if r.status_code == 200:
+        o = r.json()
+        if "contentHash" in o:
+            content_hash = o["contentHash"]
+            if content_hash.startswith("ipfs://"):
+                return "dnslink=/ipfs/" + content_hash[len("ipfs://") :]
+            if content_hash.startswith("ipns://"):
+                return "dnslink=/ipns/" + content_hash[len("ipns://") :]
+    return None
+
+
 @app.route("/dns-query", methods=["GET", "POST"])
 def dns_query():
     if request.data:
@@ -99,23 +113,28 @@ def dns_query():
                     name = str(q.name)
                     if name.endswith(".bit."):
                         name = name[0:-1]
+                    if name.endswith(".eth."):
+                        name = name[0:-1]
                     if name.startswith("_dnslink."):
                         name = name[len("_dnslink.") :]
+                    result = None
                     if name.endswith(".bit"):
                         result = dotbit_resolve(name)
-                        if result is not None:
-                            print("Resolved: " + name + " -> " + result, flush=True)
-                            response = dns.message.make_response(question)
-                            response.answer.append(
-                                dns.rrset.from_text(
-                                    q.name,
-                                    600,
-                                    dns.rdataclass.IN,
-                                    dns.rdatatype.TXT,
-                                    result,
-                                )
+                    if name.endswith(".eth"):
+                        result = ens_resolve(name)
+                    if result is not None:
+                        print("Resolved: " + name + " -> " + result, flush=True)
+                        response = dns.message.make_response(question)
+                        response.answer.append(
+                            dns.rrset.from_text(
+                                q.name,
+                                600,
+                                dns.rdataclass.IN,
+                                dns.rdatatype.TXT,
+                                result,
                             )
-                            return output(response, "application/dns-message")
+                        )
+                        return output(response, "application/dns-message")
             return output(make_empty_message())
         except Exception as e:
             print("Error: " + str(e), flush=True)
@@ -163,23 +182,26 @@ def dns_query():
         print("Type is not TXT: " + str(t), flush=True)
         return output(make_empty_message(name, t=t), ct)
 
+    result = None
     if name.endswith(".bit"):
         result = dotbit_resolve(name)
-        if result is not None:
-            print("Resolved: " + name + " -> " + result, flush=True)
-            response = dns.message.make_response(dns.message.make_query(name, t))
-            if ct == "application/dns-message":
-                response.answer.append(
-                    dns.rrset.from_text(
-                        name + ".", 600, dns.rdataclass.IN, dns.rdatatype.TXT, result
-                    )
+    if name.endswith(".eth"):
+        result = ens_resolve(name)
+    if result is not None:
+        print("Resolved: " + name + " -> " + result, flush=True)
+        response = dns.message.make_response(dns.message.make_query(name, t))
+        if ct == "application/dns-message":
+            response.answer.append(
+                dns.rrset.from_text(
+                    name + ".", 600, dns.rdataclass.IN, dns.rdatatype.TXT, result
                 )
-            else:
-                response.answer.append(
-                    dns.rrset.from_text(
-                        name, 600, dns.rdataclass.IN, dns.rdatatype.TXT, result
-                    )
+            )
+        else:
+            response.answer.append(
+                dns.rrset.from_text(
+                    name, 600, dns.rdataclass.IN, dns.rdatatype.TXT, result
                 )
-            return output(response, ct)
+            )
+        return output(response, ct)
     print("Unsupported: name=" + str(name) + " / t=" + str(t), flush=True)
     return output(make_empty_message(name, t=t), ct)
