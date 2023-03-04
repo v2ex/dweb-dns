@@ -1,15 +1,21 @@
-import traceback
 import copy
+import json
+import time
+import traceback
+
 import dns.message
 import dns.name
-import requests
 import flask
-import json
-from flask import Flask
-from flask import request, make_response
+import redis
+import requests
+from rq import Queue
+from flask import Flask, make_response, request
+from markupsafe import escape
+
+import config
 
 app = Flask(__name__)
-
+q = Queue(connection=redis.Redis())
 
 def make_rr(simple, rdata):
     csimple = copy.copy(simple)
@@ -81,7 +87,7 @@ def dotbit_resolve(name):
             records = o["data"]["records"]
             for record in records:
                 if record["key"] == "dweb.ipns":
-                    return "dnslink=/ipns/" + record["value"]
+                    return "dnslink=" + handle_ipns(record["value"])
                 if record["key"] == "dweb.ipfs":
                     return "dnslink=/ipfs/" + record["value"]
     return None
@@ -97,7 +103,9 @@ def ens_resolve(name):
             if content_hash.startswith("ipfs://"):
                 return "dnslink=/ipfs/" + content_hash[len("ipfs://") :]
             if content_hash.startswith("ipns://"):
-                return "dnslink=/ipns/" + content_hash[len("ipns://") :]
+                ipns = str(content_hash[len("ipns://") :])
+                result = handle_ipns(ipns)
+                return "dnslink=" + result
     return None
 
 
@@ -205,3 +213,45 @@ def dns_query():
         return output(response, ct)
     print("Unsupported: name=" + str(name) + " / t=" + str(t), flush=True)
     return output(make_empty_message(name, t=t), ct)
+
+def resolve_ipns(ipns: str) -> str:
+    print("Resolving IPNS: " + ipns, flush=True)
+    url = config.ipfs_api_server + "api/v0/name/resolve?arg=" + ipns
+    try:
+        print("POST: " + url, flush=True)
+        r = requests.post(url)
+        if r.status_code == 200:
+            o = r.json()
+            if "Path" in o:
+                return o["Path"]
+        else:
+            print("Error: " + str(r.status_code), flush=True)
+            print("Error: " + str(r.text), flush=True)
+        return "/ipns/" + ipns
+    except Exception as e:
+        print("Error: " + str(e), flush=True)
+        return "/ipns/" + ipns
+
+def handle_ipns(ipns: str) -> str:
+    r = redis.Redis(host='localhost', port=6379, db=0)
+    r_key = "ipns:" + ipns
+    r_key_updated = "ipns:" + ipns + ":updated"
+    r_value = r.get(r_key)
+    if r_value is not None:
+        result = str(r_value.decode("utf-8"))
+        print("Cache HIT: " + result, flush=True)
+        q.enqueue(revalidate_ipns, ipns)
+        return result
+    else:
+        value = resolve_ipns(ipns)
+        r.set(r_key, value)
+        r.set(r_key_updated, int(time.time()))
+        return str(value)
+
+def revalidate_ipns(ipns: str):
+    r = redis.Redis(host='localhost', port=6379, db=0)
+    r_key = "ipns:" + ipns
+    r_key_updated = "ipns:" + ipns + ":updated"
+    value = resolve_ipns(ipns)
+    r.set(r_key, value)
+    r.set(r_key_updated, int(time.time()))
