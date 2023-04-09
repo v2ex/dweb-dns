@@ -17,6 +17,7 @@ import config
 app = Flask(__name__)
 q = Queue(connection=redis.Redis())
 
+
 def make_rr(simple, rdata):
     csimple = copy.copy(simple)
     rdata_text = rdata.to_text()
@@ -98,7 +99,11 @@ def ens_resolve(name):
     r = requests.get(resolver + name)
     if r.status_code == 200:
         o = r.json()
-        if "contentHash" in o:
+        if (
+            "contentHash" in o
+            and o["contentHash"] is not None
+            and o["contentHash"] != ""
+        ):
             content_hash = o["contentHash"]
             if content_hash.startswith("ipfs://"):
                 return "dnslink=/ipfs/" + content_hash[len("ipfs://") :]
@@ -214,6 +219,7 @@ def dns_query():
     print("Unsupported: name=" + str(name) + " / t=" + str(t), flush=True)
     return output(make_empty_message(name, t=t), ct)
 
+
 def resolve_ipns(ipns: str) -> str:
     print("Resolving IPNS: " + ipns, flush=True)
     url = config.ipfs_api_server + "api/v0/name/resolve?arg=" + ipns
@@ -232,8 +238,9 @@ def resolve_ipns(ipns: str) -> str:
         print("Error: " + str(e), flush=True)
         return "/ipns/" + ipns
 
+
 def handle_ipns(ipns: str) -> str:
-    r = redis.Redis(host='localhost', port=6379, db=0)
+    r = redis.Redis(host="localhost", port=6379, db=0)
     r_key = "ipns:" + ipns
     r_key_updated = "ipns:" + ipns + ":updated"
     r_value = r.get(r_key)
@@ -248,8 +255,9 @@ def handle_ipns(ipns: str) -> str:
         r.set(r_key_updated, int(time.time()))
         return str(value)
 
+
 def revalidate_ipns(ipns: str):
-    r = redis.Redis(host='localhost', port=6379, db=0)
+    r = redis.Redis(host="localhost", port=6379, db=0)
     r_key = "ipns:" + ipns
     r_key_updated = "ipns:" + ipns + ":updated"
     value = resolve_ipns(ipns)
