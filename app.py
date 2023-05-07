@@ -54,7 +54,7 @@ def to_doh_simple(message):
     # we don't encode the ecs_client_subnet field
     response = flask.Response(json.dumps(simple, indent=2) + "\n")
     response.headers.set("Content-Type", "application/dns-json")
-    response.headers.set("Cloudflare-CDN-Cache-Control", "public, max-age=600")
+    response.headers.set("Cloudflare-CDN-Cache-Control", f"public, max-age=${config.cache_ttl}")
     return response
 
 
@@ -67,7 +67,7 @@ def output(message, ct="application/dns-json"):
     if ct == "application/dns-message":
         response = make_response(message.to_wire())
         response.headers.set("Content-Type", "application/dns-message")
-        response.headers.set("Cloudflare-CDN-Cache-Control", "public, max-age=600")
+        response.headers.set("Cloudflare-CDN-Cache-Control", f"public, max-age=${config.cache_ttl}")
         return response
     elif ct == "application/x-javascript":
         return to_doh_simple(message)
@@ -141,7 +141,7 @@ def dns_query():
                         response.answer.append(
                             dns.rrset.from_text(
                                 q.name,
-                                600,
+                                config.cache_ttl,
                                 dns.rdataclass.IN,
                                 dns.rdatatype.TXT,
                                 result,
@@ -206,13 +206,13 @@ def dns_query():
         if ct == "application/dns-message":
             response.answer.append(
                 dns.rrset.from_text(
-                    name + ".", 600, dns.rdataclass.IN, dns.rdatatype.TXT, result
+                    name + ".", config.cache_ttl, dns.rdataclass.IN, dns.rdatatype.TXT, result
                 )
             )
         else:
             response.answer.append(
                 dns.rrset.from_text(
-                    name, 600, dns.rdataclass.IN, dns.rdatatype.TXT, result
+                    name, config.cache_ttl, dns.rdataclass.IN, dns.rdatatype.TXT, result
                 )
             )
         return output(response, ct)
