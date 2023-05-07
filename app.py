@@ -15,7 +15,7 @@ from markupsafe import escape
 import config
 
 app = Flask(__name__)
-q = Queue(connection=redis.Redis())
+q = Queue("dweb", connection=redis.Redis())
 
 
 def make_rr(simple, rdata):
