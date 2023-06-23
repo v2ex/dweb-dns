@@ -251,7 +251,14 @@ def resolve_ipns(ipns: str) -> str:
 
 
 def handle_ipns(ipns: str) -> str:
-    return resolve_ipns(ipns)
+    r = redis.Redis(host="localhost", port=6379, db=0)
+    r_key = "ipns:" + ipns + ":results"
+    latest = r.zrevrange(r_key, 0, 0)
+    if latest is not None and len(latest) > 0:
+        q.enqueue(revalidate_ipns, ipns)
+        return latest[0].decode("utf-8")
+    else:
+        return resolve_ipns(ipns)
 
 
 def revalidate_ipns(ipns: str):
