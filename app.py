@@ -221,15 +221,26 @@ def dns_query():
 
 
 def resolve_ipns(ipns: str) -> str:
+    rc = redis.Redis(host="localhost", port=6379, db=0)
+    r_key = "ipns:" + ipns + ":results"
     print("Resolving IPNS: " + ipns, flush=True)
-    url = config.ipfs_api_server + "api/v0/name/resolve?arg=" + ipns
+    url = config.ipfs_api_server + "api/v0/name/resolve?arg=" + ipns + "&recursive=true&stream=true&nocache=true"
     try:
         print("POST: " + url, flush=True)
         r = requests.post(url)
         if r.status_code == 200:
-            o = r.json()
-            if "Path" in o:
-                return o["Path"]
+            lines = r.text.split("\n")
+            for line in lines:
+                if line.startswith("{"):
+                    o = json.loads(line)
+                    existing = rc.zscore(r_key, o["Path"])
+                    if existing is None:
+                        print("Adding: " + o["Path"], flush=True)
+                        rc.zadd(r_key, {o["Path"]: int(time.time())}, nx=True)
+                        return o["Path"]
+            latest = rc.zrevrange(r_key, 0, 0)
+            if latest is not None and len(latest) > 0:
+                return latest[0].decode("utf-8")
         else:
             print("Error: " + str(r.status_code), flush=True)
             print("Error: " + str(r.text), flush=True)
@@ -240,26 +251,9 @@ def resolve_ipns(ipns: str) -> str:
 
 
 def handle_ipns(ipns: str) -> str:
-    r = redis.Redis(host="localhost", port=6379, db=0)
-    r_key = "ipns:" + ipns
-    r_key_updated = "ipns:" + ipns + ":updated"
-    r_value = r.get(r_key)
-    if r_value is not None:
-        result = str(r_value.decode("utf-8"))
-        print("Cache HIT: " + result, flush=True)
-        q.enqueue(revalidate_ipns, ipns)
-        return result
-    else:
-        value = resolve_ipns(ipns)
-        r.set(r_key, value)
-        r.set(r_key_updated, int(time.time()))
-        return str(value)
+    return resolve_ipns(ipns)
 
 
 def revalidate_ipns(ipns: str):
-    r = redis.Redis(host="localhost", port=6379, db=0)
-    r_key = "ipns:" + ipns
-    r_key_updated = "ipns:" + ipns + ":updated"
     value = resolve_ipns(ipns)
-    r.set(r_key, value)
-    r.set(r_key_updated, int(time.time()))
+    print("Revalidated: " + ipns + " -> " + value, flush=True)
