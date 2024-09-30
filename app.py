@@ -149,6 +149,8 @@ def dns_query():
                     name = str(q.name)
                     if name.endswith(".bit."):
                         name = name[0:-1]
+                    if name.endswith(".sol."):
+                        name = name[0:-1]
                     if name.endswith(".eth."):
                         name = name[0:-1]
                     if name.startswith("_dnslink."):
@@ -214,6 +216,8 @@ def dns_query():
 
     name = name.lower()
     if name.endswith(".bit."):
+        name = name[0:-1]
+    if name.endswith(".sol."):
         name = name[0:-1]
 
     if t != dns.rdatatype.TXT:
