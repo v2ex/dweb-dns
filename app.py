@@ -1,5 +1,7 @@
+import base64
 import copy
 import json
+import re
 import time
 import traceback
 
@@ -75,6 +77,27 @@ def output(message, ct="application/dns-json"):
         return to_doh_simple(message)
     else:
         return to_doh_simple(message)
+    
+
+def sol_resolve(name):
+    sns_sdk = "https://sns-sdk-proxy.bonfida.workers.dev"
+    query = sns_sdk + "/domain-data/" + name
+    r = requests.get(query)
+    if r.status_code == 200:
+        o = r.json()
+        if "result" in o and o["result"] is not None:
+            result = o["result"]
+            try:
+                decoded = base64.b64decode(result)
+                # Discard non-UTF-8 parts and use the usable part of the string
+                decoded_str = decoded.decode('utf-8', errors='ignore')
+                # Use regex to find ipns=
+                ipns = re.compile(r"ipns=(k51[a-zA-Z0-9]{59})").search(decoded_str)
+                if ipns is not None:
+                    return "dnslink=" + handle_ipns(ipns.group(1))
+            except UnicodeDecodeError as e:
+                print(f"UnicodeDecodeError: {e}", flush=True)
+    return None
 
 
 def dotbit_resolve(name):
@@ -133,6 +156,8 @@ def dns_query():
                     result = None
                     if name.endswith(".bit"):
                         result = dotbit_resolve(name)
+                    if name.endswith(".sol"):
+                        result = sol_resolve(name)
                     if name.endswith(".eth"):
                         result = ens_resolve(name)
                     if result is not None:
@@ -198,6 +223,8 @@ def dns_query():
     result = None
     if name.endswith(".bit"):
         result = dotbit_resolve(name)
+    if name.endswith(".sol"):
+        result = sol_resolve(name)
     if name.endswith(".eth"):
         result = ens_resolve(name)
     if result is not None:
