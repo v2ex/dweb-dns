@@ -93,6 +93,18 @@ def sol_resolve(name):
             if ipns.startswith("ipns://"):
                 ipns = str(ipns[len("ipns://") :])
                 return "dnslink=" + handle_ipns(ipns)
+    # try: /record-v2/{name}/IPFS
+    query = sns_sdk + "/record-v2/" + name + "/IPFS"
+    r = requests.get(query)
+    if r.status_code == 200:
+        o = r.json()
+        if "result" in o and o["result"] is not None and "deserialized" in o["result"]:
+            ipfs = o["result"]["deserialized"]
+            if ipfs.startswith("Qm") or ipfs.startswith("baf"):
+                return "dnslink=/ipfs/" + ipfs
+            if ipfs.startswith("ipfs://"):
+                ipfs = str(ipfs[len("ipfs://") :])
+                return "dnslink=/ipfs/" + ipfs
     # try: /domain-data/{name}
     query = sns_sdk + "/domain-data/" + name
     r = requests.get(query)
