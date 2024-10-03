@@ -81,6 +81,19 @@ def output(message, ct="application/dns-json"):
 
 def sol_resolve(name):
     sns_sdk = "https://sns-sdk-proxy.bonfida.workers.dev"
+    # try: /record-v2/{name}/IPNS
+    query = sns_sdk + "/record-v2/" + name + "/IPNS"
+    r = requests.get(query)
+    if r.status_code == 200:
+        o = r.json()
+        if "result" in o and o["result"] is not None and "deserialized" in o["result"]:
+            ipns = o["result"]["deserialized"]
+            if ipns.startswith("k51") or ipns.startswith("k2"):
+                return "dnslink=" + handle_ipns(ipns)
+            if ipns.startswith("ipns://"):
+                ipns = str(ipns[len("ipns://") :])
+                return "dnslink=" + handle_ipns(ipns)
+    # try: /domain-data/{name}
     query = sns_sdk + "/domain-data/" + name
     r = requests.get(query)
     if r.status_code == 200:
