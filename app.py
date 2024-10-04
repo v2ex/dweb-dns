@@ -89,10 +89,12 @@ def sol_resolve(name):
         if "result" in o and o["result"] is not None and "deserialized" in o["result"]:
             ipns = o["result"]["deserialized"]
             if ipns.startswith("k51") or ipns.startswith("k2"):
-                return "dnslink=" + handle_ipns(ipns)
+                # return "dnslink=" + handle_ipns(ipns)
+                return "dnslink=/ipns/" + ipns 
             if ipns.startswith("ipns://"):
                 ipns = str(ipns[len("ipns://") :])
-                return "dnslink=" + handle_ipns(ipns)
+                # return "dnslink=" + handle_ipns(ipns)
+                return "dnslink=/ipns/" + ipns
     # try: /record-v2/{name}/IPFS
     query = sns_sdk + "/record-v2/" + name + "/IPFS"
     r = requests.get(query)
