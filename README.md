@@ -2,6 +2,7 @@
 
 This is a simple DoH server for blockchain domains. Currently, it can support the following blockchain domains:
 
+- [.sol](https://sns.id/)
 - [.bit](https://did.id/)
 
 ## Usage
@@ -44,13 +45,15 @@ You can use this server with [Kubo](https://github.com/ipfs/kubo) by adding the 
 ```json
 "DNS": {
   "Resolvers": {
-    "bit.": "https://dweb-dns.v2ex.pro/dns-query"
+    "bit.": "https://dweb-dns.v2ex.pro/dns-query",
+    "sol.": "https://dweb-dns.v2ex.pro/dns-query"
   }
 }
 ```
 
 After that, your Kubo gateway will be able to resolve and access blockchain domains like this:
 
+- https://ipfs.v2ex.pro/ipns/planetable.sol/
 - https://ipfs.v2ex.pro/ipns/v2ex.bit/
 - https://ipfs.v2ex.pro/ipns/planetable.bit/
 
