@@ -138,12 +138,20 @@ def fc_resolve(name):
     r = requests.get(api)
     if r.status_code == 200:
         o = r.json()
-        # find IPNS in bio
         if "result" in o and "user" in o["result"] and "profile" in o["result"]["user"] and "bio" in o["result"]["user"]["profile"]:
             bio = o["result"]["user"]["profile"]["bio"]["text"]
+            # find IPNS in bio
             ipns = re.compile(r"(k51[a-zA-Z0-9]{59})").search(bio)
             if ipns is not None:
                 return "dnslink=/ipns/" + ipns.group(1)
+            # find CIDv0 in bio
+            cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(bio)
+            if cidv0 is not None:
+                return "dnslink=/ipfs/" + cidv0.group(1)
+            # find CIDv1 in bio
+            cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(bio)
+            if cidv1 is not None:
+                return "dnslink=/ipfs/" + cidv1.group(1)
     return None
 
 
