@@ -121,9 +121,29 @@ def sol_resolve(name):
                 # Use regex to find ipns=
                 ipns = re.compile(r"ipns=(k51[a-zA-Z0-9]{59})").search(decoded_str)
                 if ipns is not None:
+                    print("Found IPNS: " + ipns.group(1), flush=True)
                     return "dnslink=" + handle_ipns(ipns.group(1))
             except UnicodeDecodeError as e:
                 print(f"UnicodeDecodeError: {e}", flush=True)
+    return None
+
+
+def fc_resolve(name):
+    print("Resolving Farcaster Name: " + name, flush=True)
+    api = "https://client.warpcast.com/v2/user-by-username?username="
+    name = name.strip().lower()
+    if name.endswith(".fc"):
+        name = name[0:-3]
+    api = api + name
+    r = requests.get(api)
+    if r.status_code == 200:
+        o = r.json()
+        # find IPNS in bio
+        if "result" in o and "user" in o["result"] and "profile" in o["result"]["user"] and "bio" in o["result"]["user"]["profile"]:
+            bio = o["result"]["user"]["profile"]["bio"]["text"]
+            ipns = re.compile(r"(k51[a-zA-Z0-9]{59})").search(bio)
+            if ipns is not None:
+                return "dnslink=/ipns/" + ipns.group(1)
     return None
 
 
@@ -178,6 +198,8 @@ def dns_query():
                         name = name[0:-1]
                     if name.endswith(".sol."):
                         name = name[0:-1]
+                    if name.endswith(".fc."):
+                        name = name[0:-1]
                     if name.endswith(".eth."):
                         name = name[0:-1]
                     if name.startswith("_dnslink."):
@@ -187,6 +209,8 @@ def dns_query():
                         result = dotbit_resolve(name)
                     if name.endswith(".sol"):
                         result = sol_resolve(name)
+                    if name.endswith(".fc"):
+                        result = fc_resolve(name)
                     if name.endswith(".eth"):
                         result = ens_resolve(name)
                     if result is not None:
@@ -246,6 +270,9 @@ def dns_query():
         name = name[0:-1]
     if name.endswith(".sol."):
         name = name[0:-1]
+    if name.endswith(".fc."):
+        name = name[0:-1]
+
 
     if t != dns.rdatatype.TXT:
         print("Type is not TXT: " + str(t), flush=True)
@@ -256,6 +283,8 @@ def dns_query():
         result = dotbit_resolve(name)
     if name.endswith(".sol"):
         result = sol_resolve(name)
+    if name.endswith(".fc"):
+        result = fc_resolve(name)
     if name.endswith(".eth"):
         result = ens_resolve(name)
     if result is not None:
