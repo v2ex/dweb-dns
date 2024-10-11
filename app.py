@@ -130,6 +130,7 @@ def sol_resolve(name):
 
 def fc_resolve(name):
     print("Resolving Farcaster Name: " + name, flush=True)
+    # first: try bio with warpcast API
     api = "https://client.warpcast.com/v2/user-by-username?username="
     name = name.strip().lower()
     if name.endswith(".fc"):
@@ -152,6 +153,32 @@ def fc_resolve(name):
             cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(bio)
             if cidv1 is not None:
                 return "dnslink=/ipfs/" + cidv1.group(1)
+    # second: try USER_DATA_TYPE=5 with Hub
+    hub = "https://hub.pinata.cloud"
+    api = hub + "/v1/userNameProofByName?name=" + name
+    r = requests.get(api)
+    if r.status_code == 200:
+        o = r.json()
+        if "fid" in o:
+            fid = o["fid"]
+            api = hub + "/v1/userDataByFid?fid=" + str(fid) + "&user_data_type=5"
+            r = requests.get(api)
+            if r.status_code == 200:
+                o = r.json()
+                if "data" in o and "userDataBody" in o["data"] and "value" in o["data"]["userDataBody"]:
+                    value = o["data"]["userDataBody"]["value"]
+                    # find IPNS in value
+                    ipns = re.compile(r"(k51[a-zA-Z0-9]{59})").search(value)
+                    if ipns is not None:
+                        return "dnslink=/ipns/" + ipns.group(1)
+                    # find CIDv0 in value
+                    cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(value)
+                    if cidv0 is not None:
+                        return "dnslink=/ipfs/" + cidv0.group(1)
+                    # find CIDv1 in value
+                    cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(value)
+                    if cidv1 is not None:
+                        return "dnslink=/ipfs/" + cidv1.group(1)
     return None
 
 
