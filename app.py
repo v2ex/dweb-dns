@@ -154,7 +154,8 @@ def fc_resolve(name):
             if cidv1 is not None:
                 return "dnslink=/ipfs/" + cidv1.group(1)
     # second: try USER_DATA_TYPE=5 with Hub
-    hub = "https://hub.pinata.cloud"
+    # hub = "https://hub.pinata.cloud"
+    hub = "https://hub.farcaster.standardcrypto.vc:2281"
     api = hub + "/v1/userNameProofByName?name=" + name
     r = requests.get(api)
     if r.status_code == 200:
