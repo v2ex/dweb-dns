@@ -23,6 +23,8 @@ q = Queue("dweb", connection=redis.Redis())
 
 
 def log_successful_resolve(channel, name, result):
+    if channel == "furl" and not name.endswith(".fc"):
+        name = name + ".fc"
     logsnag.track(
         channel=channel,
         event=f"OK: {channel}/{name} -> {result}",
