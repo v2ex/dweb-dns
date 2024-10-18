@@ -13,12 +13,25 @@ import requests
 from rq import Queue
 from flask import Flask, make_response, request
 from markupsafe import escape
-
+from logsnag import LogSnag
 import config
+
+logsnag = LogSnag(token=config.logsnag_token, project=config.logsnag_project)
 
 app = Flask(__name__)
 q = Queue("dweb", connection=redis.Redis())
 
+
+def log_successful_resolve(channel, name, result):
+    logsnag.track(
+        channel=channel,
+        event=f"OK: {channel}/{name} -> {result}",
+        user_id=name,
+        notify=True,
+        tags={
+            "result": result
+        }
+    )
 
 def make_rr(simple, rdata):
     csimple = copy.copy(simple)
@@ -90,11 +103,15 @@ def sol_resolve(name):
             ipns = o["result"]["deserialized"]
             if ipns.startswith("k51") or ipns.startswith("k2"):
                 # return "dnslink=" + handle_ipns(ipns)
-                return "dnslink=/ipns/" + ipns 
+                result = "dnslink=/ipns/" + ipns
+                log_successful_resolve("sol", name, result)
+                return result
             if ipns.startswith("ipns://"):
                 ipns = str(ipns[len("ipns://") :])
                 # return "dnslink=" + handle_ipns(ipns)
-                return "dnslink=/ipns/" + ipns
+                result = "dnslink=/ipns/" + ipns
+                log_successful_resolve("sol", name, result)
+                return result
     # try: /record-v2/{name}/IPFS
     query = sns_sdk + "/record-v2/" + name + "/IPFS"
     r = requests.get(query)
@@ -103,10 +120,14 @@ def sol_resolve(name):
         if "result" in o and o["result"] is not None and "deserialized" in o["result"]:
             ipfs = o["result"]["deserialized"]
             if ipfs.startswith("Qm") or ipfs.startswith("baf"):
-                return "dnslink=/ipfs/" + ipfs
+                result = "dnslink=/ipfs/" + ipfs
+                log_successful_resolve("sol", name, result)
+                return result
             if ipfs.startswith("ipfs://"):
                 ipfs = str(ipfs[len("ipfs://") :])
-                return "dnslink=/ipfs/" + ipfs
+                result = "dnslink=/ipfs/" + ipfs
+                log_successful_resolve("sol", name, result)
+                return result
     # try: /domain-data/{name}
     query = sns_sdk + "/domain-data/" + name
     r = requests.get(query)
@@ -122,7 +143,9 @@ def sol_resolve(name):
                 ipns = re.compile(r"ipns=(k51[a-zA-Z0-9]{59})").search(decoded_str)
                 if ipns is not None:
                     print("Found IPNS: " + ipns.group(1), flush=True)
-                    return "dnslink=" + handle_ipns(ipns.group(1))
+                    result = "dnslink=/ipns/" + ipns.group(1)
+                    log_successful_resolve("sol", name, result)
+                    return result
             except UnicodeDecodeError as e:
                 print(f"UnicodeDecodeError: {e}", flush=True)
     return None
@@ -144,15 +167,21 @@ def fc_resolve(name):
             # find IPNS in bio
             ipns = re.compile(r"(k51[a-zA-Z0-9]{59})").search(bio)
             if ipns is not None:
-                return "dnslink=/ipns/" + ipns.group(1)
+                result = "dnslink=/ipns/" + ipns.group(1)
+                log_successful_resolve("furl", name, result)
+                return result
             # find CIDv0 in bio
             cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(bio)
             if cidv0 is not None:
-                return "dnslink=/ipfs/" + cidv0.group(1)
+                result = "dnslink=/ipfs/" + cidv0.group(1)
+                log_successful_resolve("furl", name, result)
+                return result
             # find CIDv1 in bio
             cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(bio)
             if cidv1 is not None:
-                return "dnslink=/ipfs/" + cidv1.group(1)
+                result = "dnslink=/ipfs/" + cidv1.group(1)
+                log_successful_resolve("furl", name, result)
+                return result
     # second: try USER_DATA_TYPE=5 with Hub
     # hub = "https://hub.pinata.cloud"
     hub = "https://hub.farcaster.standardcrypto.vc:2281"
@@ -171,15 +200,21 @@ def fc_resolve(name):
                     # find IPNS in value
                     ipns = re.compile(r"(k51[a-zA-Z0-9]{59})").search(value)
                     if ipns is not None:
-                        return "dnslink=/ipns/" + ipns.group(1)
+                        result = "dnslink=/ipns/" + ipns.group(1)
+                        log_successful_resolve("furl", name, result)
+                        return result
                     # find CIDv0 in value
                     cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(value)
                     if cidv0 is not None:
-                        return "dnslink=/ipfs/" + cidv0.group(1)
+                        result = "dnslink=/ipfs/" + cidv0.group(1)
+                        log_successful_resolve("furl", name, result)
+                        return result
                     # find CIDv1 in value
                     cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(value)
                     if cidv1 is not None:
-                        return "dnslink=/ipfs/" + cidv1.group(1)
+                        result = "dnslink=/ipfs/" + cidv1.group(1)
+                        log_successful_resolve("furl", name, result)
+                        return result
     return None
 
 
