@@ -27,10 +27,12 @@ def log_successful_resolve(channel, name, result):
         name = name + ".fc"
     logsnag.track(
         channel=channel,
-        event=f"OK: {channel}/{name} -> {result}",
+        event=f"Successful Resolve",
+        description=f"{channel}/{name} -> {result}",
         user_id=name,
         notify=True,
         tags={
+            "channel": channel,
             "result": result
         }
     )
