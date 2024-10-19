@@ -14,6 +14,7 @@ from rq import Queue
 from flask import Flask, make_response, request
 from markupsafe import escape
 from logsnag import LogSnag
+from prewarm import resolve_ipns, prewarm
 import config
 
 logsnag = LogSnag(token=config.logsnag_token, project=config.logsnag_project)
@@ -109,12 +110,14 @@ def sol_resolve(name):
                 # return "dnslink=" + handle_ipns(ipns)
                 result = "dnslink=/ipns/" + ipns
                 log_successful_resolve("sol", name, result)
+                prewarm(result)
                 return result
             if ipns.startswith("ipns://"):
                 ipns = str(ipns[len("ipns://") :])
                 # return "dnslink=" + handle_ipns(ipns)
                 result = "dnslink=/ipns/" + ipns
                 log_successful_resolve("sol", name, result)
+                prewarm(result)
                 return result
     # try: /record-v2/{name}/IPFS
     query = sns_sdk + "/record-v2/" + name + "/IPFS"
@@ -126,11 +129,13 @@ def sol_resolve(name):
             if ipfs.startswith("Qm") or ipfs.startswith("baf"):
                 result = "dnslink=/ipfs/" + ipfs
                 log_successful_resolve("sol", name, result)
+                prewarm(result)
                 return result
             if ipfs.startswith("ipfs://"):
                 ipfs = str(ipfs[len("ipfs://") :])
                 result = "dnslink=/ipfs/" + ipfs
                 log_successful_resolve("sol", name, result)
+                prewarm(result)
                 return result
     # try: /domain-data/{name}
     query = sns_sdk + "/domain-data/" + name
@@ -149,6 +154,7 @@ def sol_resolve(name):
                     print("Found IPNS: " + ipns.group(1), flush=True)
                     result = "dnslink=/ipns/" + ipns.group(1)
                     log_successful_resolve("sol", name, result)
+                    prewarm(result)
                     return result
             except UnicodeDecodeError as e:
                 print(f"UnicodeDecodeError: {e}", flush=True)
@@ -173,18 +179,21 @@ def fc_resolve(name):
             if ipns is not None:
                 result = "dnslink=/ipns/" + ipns.group(1)
                 log_successful_resolve("furl", name, result)
+                prewarm(result)
                 return result
             # find CIDv0 in bio
             cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(bio)
             if cidv0 is not None:
                 result = "dnslink=/ipfs/" + cidv0.group(1)
                 log_successful_resolve("furl", name, result)
+                prewarm(result)
                 return result
             # find CIDv1 in bio
             cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(bio)
             if cidv1 is not None:
                 result = "dnslink=/ipfs/" + cidv1.group(1)
                 log_successful_resolve("furl", name, result)
+                prewarm(result)
                 return result
     # second: try USER_DATA_TYPE=5 with Hub
     # hub = "https://hub.pinata.cloud"
@@ -206,18 +215,21 @@ def fc_resolve(name):
                     if ipns is not None:
                         result = "dnslink=/ipns/" + ipns.group(1)
                         log_successful_resolve("furl", name, result)
+                        prewarm(result)
                         return result
                     # find CIDv0 in value
                     cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(value)
                     if cidv0 is not None:
                         result = "dnslink=/ipfs/" + cidv0.group(1)
                         log_successful_resolve("furl", name, result)
+                        prewarm(result)
                         return result
                     # find CIDv1 in value
                     cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(value)
                     if cidv1 is not None:
                         result = "dnslink=/ipfs/" + cidv1.group(1)
                         log_successful_resolve("furl", name, result)
+                        prewarm(result)
                         return result
     return None
 
@@ -380,36 +392,6 @@ def dns_query():
         return output(response, ct)
     print("Unsupported: name=" + str(name) + " / t=" + str(t), flush=True)
     return output(make_empty_message(name, t=t), ct)
-
-
-def resolve_ipns(ipns: str) -> str:
-    rc = redis.Redis(host="localhost", port=6379, db=0)
-    r_key = "ipns:" + ipns + ":results"
-    print("Resolving IPNS: " + ipns, flush=True)
-    url = config.ipfs_api_server + "api/v0/name/resolve?arg=" + ipns + "&recursive=true&stream=true&nocache=true"
-    try:
-        print("POST: " + url, flush=True)
-        r = requests.post(url)
-        if r.status_code == 200:
-            lines = r.text.split("\n")
-            for line in lines:
-                if line.startswith("{"):
-                    o = json.loads(line)
-                    existing = rc.zscore(r_key, o["Path"])
-                    if existing is None:
-                        print("Adding: " + o["Path"], flush=True)
-                        rc.zadd(r_key, {o["Path"]: int(time.time())}, nx=True)
-                        return o["Path"]
-            latest = rc.zrevrange(r_key, 0, 0)
-            if latest is not None and len(latest) > 0:
-                return latest[0].decode("utf-8")
-        else:
-            print("Error: " + str(r.status_code), flush=True)
-            print("Error: " + str(r.text), flush=True)
-        return "/ipns/" + ipns
-    except Exception as e:
-        print("Error: " + str(e), flush=True)
-        return "/ipns/" + ipns
 
 
 def handle_ipns(ipns: str) -> str:
