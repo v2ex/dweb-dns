@@ -8,6 +8,10 @@ This is a simple DoH server for blockchain domains. Currently, it can support th
 ## Usage
 
 ```bash
+curl -H "accept: application/dns-json" -X GET "http://127.0.0.1:5000/dns-query?name=ohlife.sol"
+```
+
+```bash
 curl -H "accept: application/dns-json" -X GET "https://dweb-dns.v2ex.pro/dns-query?name=v2ex.bit"
 ```
 
