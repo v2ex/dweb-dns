@@ -196,8 +196,7 @@ def fc_resolve(name):
                 prewarm(result)
                 return result
     # second: try USER_DATA_TYPE=5 with Hub
-    hub = "https://hub.pinata.cloud"
-    # hub = "https://hub.farcaster.standardcrypto.vc:2281"
+    hub = config.farcaster_hub
     api = hub + "/v1/userNameProofByName?name=" + name
     r = requests.get(api)
     if r.status_code == 200:
