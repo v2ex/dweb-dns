@@ -1,5 +1,6 @@
 import base64
 import copy
+import crayons
 import json
 import re
 import time
@@ -74,7 +75,7 @@ def to_doh_simple(message):
     # we don't encode the ecs_client_subnet field
     response = flask.Response(json.dumps(simple, indent=2) + "\n")
     response.headers.set("Content-Type", "application/dns-json")
-    response.headers.set("Cloudflare-CDN-Cache-Control", f"public, max-age=${config.cache_ttl}")
+    response.headers.set("Cloudflare-CDN-Cache-Control", f"public, max-age=${config.dns_cache_ttl}")
     return response
 
 
@@ -87,7 +88,7 @@ def output(message, ct="application/dns-json"):
     if ct == "application/dns-message":
         response = make_response(message.to_wire())
         response.headers.set("Content-Type", "application/dns-message")
-        response.headers.set("Cloudflare-CDN-Cache-Control", f"public, max-age=${config.cache_ttl}")
+        response.headers.set("Cloudflare-CDN-Cache-Control", f"public, max-age=${config.dns_cache_ttl}")
         return response
     elif ct == "application/x-javascript":
         return to_doh_simple(message)
@@ -95,9 +96,23 @@ def output(message, ct="application/dns-json"):
         return to_doh_simple(message)
     else:
         return to_doh_simple(message)
-    
+
+def cache_result(cache_key, result, ttl=30):
+    rs = redis.Redis(host="localhost", port=6379, db=0)
+    rs.set(cache_key, result)
+    rs.expire(cache_key, ttl)
 
 def sol_resolve(name):
+    print(crayons.cyan("Resolving Solana Name: " + name), flush=True)
+    cache_key = "sol:" + name
+    rs = redis.Redis(host="localhost", port=6379, db=0)
+    cached = rs.get(cache_key)
+    if cached is not None:
+        result = cached.decode("utf-8")
+        log_successful_resolve("sol", name, result)
+        q.enqueue(prewarm, result)
+        print(crayons.green("Cache Hit: " + name + " -> " + result), flush=True)
+        return result
     sns_sdk = "https://sns-sdk-proxy.bonfida.workers.dev"
     # try: /record-v2/{name}/IPNS
     query = sns_sdk + "/record-v2/" + name + "/IPNS"
@@ -110,14 +125,16 @@ def sol_resolve(name):
                 # return "dnslink=" + handle_ipns(ipns)
                 result = "dnslink=/ipns/" + ipns
                 log_successful_resolve("sol", name, result)
-                prewarm(result)
+                q.enqueue(prewarm, result)
+                cache_result(cache_key, result)
                 return result
             if ipns.startswith("ipns://"):
                 ipns = str(ipns[len("ipns://") :])
                 # return "dnslink=" + handle_ipns(ipns)
                 result = "dnslink=/ipns/" + ipns
                 log_successful_resolve("sol", name, result)
-                prewarm(result)
+                q.enqueue(prewarm, result)
+                cache_result(cache_key, result)
                 return result
     # try: /record-v2/{name}/IPFS
     query = sns_sdk + "/record-v2/" + name + "/IPFS"
@@ -129,13 +146,15 @@ def sol_resolve(name):
             if ipfs.startswith("Qm") or ipfs.startswith("baf"):
                 result = "dnslink=/ipfs/" + ipfs
                 log_successful_resolve("sol", name, result)
-                prewarm(result)
+                q.enqueue(prewarm, result)
+                cache_result(cache_key, result)
                 return result
             if ipfs.startswith("ipfs://"):
                 ipfs = str(ipfs[len("ipfs://") :])
                 result = "dnslink=/ipfs/" + ipfs
                 log_successful_resolve("sol", name, result)
-                prewarm(result)
+                q.enqueue(prewarm, result)
+                cache_result(cache_key, result)
                 return result
     # try: /domain-data/{name}
     query = sns_sdk + "/domain-data/" + name
@@ -154,7 +173,8 @@ def sol_resolve(name):
                     print("Found IPNS: " + ipns.group(1), flush=True)
                     result = "dnslink=/ipns/" + ipns.group(1)
                     log_successful_resolve("sol", name, result)
-                    prewarm(result)
+                    q.enqueue(prewarm, result)
+                    cache_result(cache_key, result)
                     return result
             except UnicodeDecodeError as e:
                 print(f"UnicodeDecodeError: {e}", flush=True)
@@ -162,12 +182,21 @@ def sol_resolve(name):
 
 
 def fc_resolve(name):
-    print("Resolving Farcaster Name: " + name, flush=True)
+    print(crayons.cyan("Resolving Farcaster Name: " + name), flush=True)
     # first: try bio with warpcast API
     api = "https://client.warpcast.com/v2/user-by-username?username="
     name = name.strip().lower()
     if name.endswith(".fc"):
         name = name[0:-3]
+    cache_key = "furl:" + name
+    rs = redis.Redis(host="localhost", port=6379, db=0)
+    cached = rs.get(cache_key)
+    if cached is not None:
+        result = cached.decode("utf-8")
+        log_successful_resolve("furl", name, result)
+        q.enqueue(prewarm, result)
+        print(crayons.green("Cache Hit: " + name + " -> " + result), flush=True)
+        return result
     api = api + name
     r = requests.get(api)
     if r.status_code == 200:
@@ -179,21 +208,24 @@ def fc_resolve(name):
             if ipns is not None:
                 result = "dnslink=/ipns/" + ipns.group(1)
                 log_successful_resolve("furl", name, result)
-                prewarm(result)
+                q.enqueue(prewarm, result)
+                cache_result(cache_key, result)
                 return result
             # find CIDv0 in bio
             cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(bio)
             if cidv0 is not None:
                 result = "dnslink=/ipfs/" + cidv0.group(1)
                 log_successful_resolve("furl", name, result)
-                prewarm(result)
+                q.enqueue(prewarm, result)
+                cache_result(cache_key, result)
                 return result
             # find CIDv1 in bio
             cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(bio)
             if cidv1 is not None:
                 result = "dnslink=/ipfs/" + cidv1.group(1)
                 log_successful_resolve("furl", name, result)
-                prewarm(result)
+                q.enqueue(prewarm, result)
+                cache_result(cache_key, result)
                 return result
     # second: try USER_DATA_TYPE=5 with Hub
     hub = config.farcaster_hub
@@ -214,21 +246,24 @@ def fc_resolve(name):
                     if ipns is not None:
                         result = "dnslink=/ipns/" + ipns.group(1)
                         log_successful_resolve("furl", name, result)
-                        prewarm(result)
+                        q.enqueue(prewarm, result)
+                        cache_result(cache_key, result)
                         return result
                     # find CIDv0 in value
                     cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(value)
                     if cidv0 is not None:
                         result = "dnslink=/ipfs/" + cidv0.group(1)
                         log_successful_resolve("furl", name, result)
-                        prewarm(result)
+                        q.enqueue(prewarm, result)
+                        cache_result(cache_key, result)
                         return result
                     # find CIDv1 in value
                     cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(value)
                     if cidv1 is not None:
                         result = "dnslink=/ipfs/" + cidv1.group(1)
                         log_successful_resolve("furl", name, result)
-                        prewarm(result)
+                        q.enqueue(prewarm, result)
+                        cache_result(cache_key, result)
                         return result
     return None
 
@@ -305,7 +340,7 @@ def dns_query():
                         response.answer.append(
                             dns.rrset.from_text(
                                 q.name,
-                                config.cache_ttl,
+                                config.dns_cache_ttl,
                                 dns.rdataclass.IN,
                                 dns.rdatatype.TXT,
                                 result,
@@ -379,13 +414,13 @@ def dns_query():
         if ct == "application/dns-message":
             response.answer.append(
                 dns.rrset.from_text(
-                    name + ".", config.cache_ttl, dns.rdataclass.IN, dns.rdatatype.TXT, result
+                    name + ".", config.dns_cache_ttl, dns.rdataclass.IN, dns.rdatatype.TXT, result
                 )
             )
         else:
             response.answer.append(
                 dns.rrset.from_text(
-                    name, config.cache_ttl, dns.rdataclass.IN, dns.rdatatype.TXT, result
+                    name, config.dns_cache_ttl, dns.rdataclass.IN, dns.rdatatype.TXT, result
                 )
             )
         return output(response, ct)
