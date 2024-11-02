@@ -2,14 +2,25 @@
 
 This is a simple DoH server for blockchain domains. Currently, it can support the following blockchain domains:
 
-- [.sol](https://sns.id/)
+- [.sol](https://sns.id/) - Solana Name Service
+- [.fc](https://warpcast.com/) - Farcaster username's URL field
 - [.bit](https://did.id/)
 
 ## Usage
 
+Start a local instance:
+
+```
+FLASK_DEBUG=true flask run --host=0.0.0.0
+```
+
+Look up a [.sol](https://sns.id/) domain:
+
 ```bash
 curl -H "accept: application/dns-json" -X GET "http://127.0.0.1:5000/dns-query?name=ohlife.sol"
 ```
+
+Look up a [.bit](https://did.id/bit/) domain:
 
 ```bash
 curl -H "accept: application/dns-json" -X GET "https://dweb-dns.v2ex.pro/dns-query?name=v2ex.bit"
